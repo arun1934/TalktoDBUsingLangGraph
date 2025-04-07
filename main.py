@@ -69,7 +69,7 @@ def db_query_tool(query: str) -> str:
     If an error is returned, rewrite the query, check the query, and try again.
     """
     result = db.run_no_throw(query)
-    print(result)
+    # print(result)
     if not result:
         return "Error: Query failed. Please rewrite your query and try again."
     return result
@@ -197,6 +197,7 @@ query_gen=query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bind
 
         [SubmitFinalAnswer]
 )
+print(query_gen)
 
 
 def query_gen_node(state: State):
@@ -274,15 +275,23 @@ async def process_query(request: QueryRequest):
         for event in app1.stream(
                 {"messages": [("user", request.query)]}
         ):
-            print(event)
+            # print(event)
             event1 = event
         #     # print(event)
+        result_obj = get_final_answer(event1)
         return JSONResponse(content={
-            "sql": "sql_query",
+            "sql": result_obj.get("query", ""),
             "explanation": "",
-            "results": get_final_answer(event1),
+            "results": result_obj.get("answer", ""),
             "rowCount": len("results"),
         })
+
+        # return JSONResponse(content={
+        #     "sql": "sql_query",
+        #     "explanation": "",
+        #     "results": get_final_answer(event1),
+        #     "rowCount": len("results"),
+        # })
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
@@ -293,10 +302,33 @@ async def get_index(request: Request):
     """Render the frontend page"""
     return templates.TemplateResponse("index.html", {"request": request})
 
+
+# def get_final_answer(data):
+#     try:
+#         messages = data['query_gen']['messages']
+#         for message in messages:
+#             tool_calls = message.additional_kwargs.get('tool_calls', [])
+#             for call in tool_calls:
+#                 args = call.get('function', {}).get('arguments')
+#                 if args:
+#                     import json
+#                     args_dict = json.loads(args)
+#                     if 'final_answer' in args_dict:
+#                         answer1 = args_dict['final_answer']
+#                         print(answer1)
+#                         output = "<p>" + answer1.replace("\n", "<br>") + "</p>"
+#                         return output
+#     except (KeyError, AttributeError, ValueError, TypeError) as e:
+#         print(f"Error extracting final answer: {e}")
+#     return None
+
+
 def get_final_answer(data):
     try:
         messages = data['query_gen']['messages']
         for message in messages:
+            content = message.content
+            print(f"[DEBUG] Query content:\n{content}")  # <-- helpful log
             tool_calls = message.additional_kwargs.get('tool_calls', [])
             for call in tool_calls:
                 args = call.get('function', {}).get('arguments')
@@ -305,10 +337,11 @@ def get_final_answer(data):
                     args_dict = json.loads(args)
                     if 'final_answer' in args_dict:
                         answer1 = args_dict['final_answer']
-                        print(answer1)
-                        output = "<p>" + answer1.replace("\n", "<br>") + "</p>"
-                        return output
-    except (KeyError, AttributeError, ValueError, TypeError) as e:
+                        return {
+                            "answer": "<p>" + answer1.replace("\n", "<br>") + "</p>",
+                            "query": content
+                        }
+    except Exception as e:
         print(f"Error extracting final answer: {e}")
     return None
 
