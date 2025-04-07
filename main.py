@@ -1,51 +1,31 @@
 from langchain_community.utilities import SQLDatabase
+from dotenv import load_dotenv
 from typing import Any
-
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableLambda, RunnableWithFallbacks
 from langgraph.prebuilt import ToolNode
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-
-
-from langchain_openai import ChatOpenAI
-
 from typing import Annotated, Literal
-
 from langchain_core.messages import AIMessage
-# from langchain_core.pydantic_v1 import BaseModel, Field
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
-
 from langgraph.graph import END, StateGraph, START
 from langgraph.graph.message import AnyMessage, add_messages
-
-# -----
-from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 
-# -------
-
-import os
-import psycopg2
-import requests
-import json
-import re
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-os.environ["OPENAI_API_KEY"] = ""
+import os
+load_dotenv()
+os.getenv("OPENAI_API_KEY")
 db = SQLDatabase.from_uri("postgresql+psycopg2://postgres:admin@localhost/NPS")
-# print(db)
-# print(db.dialect)
-# print(db.get_usable_table_names())
-# print(db.run("SELECT * FROM customer_feedback LIMIT 10;"))
+
 
 
 def create_tool_node_with_fallback(tools: list) -> RunnableWithFallbacks[Any, dict]:
@@ -71,7 +51,7 @@ def handle_tool_error(state) -> dict:
     }
 
 
-toolkit = SQLDatabaseToolkit(db=db, llm=ChatOpenAI(model="gpt-4o"))
+toolkit = SQLDatabaseToolkit(db=db, llm=ChatOpenAI(model="gpt-4o-mini"))
 tools = toolkit.get_tools()
 
 list_tables_tool = next(tool for tool in tools if tool.name == "sql_db_list_tables")
@@ -89,6 +69,7 @@ def db_query_tool(query: str) -> str:
     If an error is returned, rewrite the query, check the query, and try again.
     """
     result = db.run_no_throw(query)
+    print(result)
     if not result:
         return "Error: Query failed. Please rewrite your query and try again."
     return result
@@ -119,11 +100,12 @@ You will call the appropriate tool to execute the query after running this check
 query_check_prompt = ChatPromptTemplate.from_messages(
     [("system", query_check_system), ("placeholder", "{messages}")]
 )
-query_check = query_check_prompt | llm.bind_tools(
+# query_check = query_check_prompt | llm.bind_tools(
+query_check = query_check_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools(
     [db_query_tool], tool_choice="required"
 )
 
-query_check.invoke({"messages": [("user", "SELECT * FROM customer_feedback LIMIT 5;")]})
+# query_check.invoke({"messages": [("user", "SELECT * FROM customer_feedback LIMIT 5;")]})
 
 
 # Define the state for the agent
@@ -167,7 +149,8 @@ workflow.add_node(
 workflow.add_node("get_schema_tool", create_tool_node_with_fallback([get_schema_tool]))
 
 # Add a node for a model to choose the relevant tables based on the question and available tables
-model_get_schema = llm.bind_tools(
+# model_get_schema = llm.bind_tools(
+model_get_schema = ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools(
     [get_schema_tool]
 )
 workflow.add_node(
@@ -209,8 +192,10 @@ DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the databa
 query_gen_prompt = ChatPromptTemplate.from_messages(
     [("system", query_gen_system), ("placeholder", "{messages}")]
 )
-query_gen = query_gen_prompt | llm.bind_tools(
-    [SubmitFinalAnswer]
+# query_gen = query_gen_prompt | llm.bind_tools(
+query_gen=query_gen_prompt | ChatOpenAI(model="gpt-4o-mini", temperature=0).bind_tools(
+
+        [SubmitFinalAnswer]
 )
 
 
@@ -285,12 +270,13 @@ async def process_query(request: QueryRequest):
     try:
         # Return response
         event1 = ""
+
         for event in app1.stream(
                 {"messages": [("user", request.query)]}
         ):
             print(event)
             event1 = event
-            # print(event)
+        #     # print(event)
         return JSONResponse(content={
             "sql": "sql_query",
             "explanation": "",
@@ -307,7 +293,6 @@ async def get_index(request: Request):
     """Render the frontend page"""
     return templates.TemplateResponse("index.html", {"request": request})
 
-
 def get_final_answer(data):
     try:
         messages = data['query_gen']['messages']
@@ -321,7 +306,8 @@ def get_final_answer(data):
                     if 'final_answer' in args_dict:
                         answer1 = args_dict['final_answer']
                         print(answer1)
-                        return answer1
+                        output = "<p>" + answer1.replace("\n", "<br>") + "</p>"
+                        return output
     except (KeyError, AttributeError, ValueError, TypeError) as e:
         print(f"Error extracting final answer: {e}")
     return None
