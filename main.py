@@ -275,9 +275,9 @@ async def process_query(request: QueryRequest):
         for event in app1.stream(
                 {"messages": [("user", request.query)]}
         ):
-            # print(event)
+            print(event)
             event1 = event
-        #     # print(event)
+
         result_obj = get_final_answer(event1)
         return JSONResponse(content={
             "sql": result_obj.get("query", ""),
@@ -328,7 +328,7 @@ def get_final_answer(data):
         messages = data['query_gen']['messages']
         for message in messages:
             content = message.content
-            print(f"[DEBUG] Query content:\n{content}")  # <-- helpful log
+            # print(f"[DEBUG] Query content:\n{content}")  # <-- helpful log
             tool_calls = message.additional_kwargs.get('tool_calls', [])
             for call in tool_calls:
                 args = call.get('function', {}).get('arguments')
