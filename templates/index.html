@@ -1,260 +1,422 @@
-<!-- templates/index.html -->
+<!-- OPTIMIZED index.html FILE -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPS Query Assistant</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.18.2/plotly.min.js"></script>
-    <style>
-        body {
-            padding-top: 20px;
-            background-color: #f8f9fa;
-        }
-        .card {
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .query-box {
-            background-color: #fff;
-            border-radius: 10px;
-            padding: 20px;
-        }
-        .result-section {
-            display: none;
-        }
-        .sql-query {
-            font-family: monospace;
-            background-color: #f4f4f4;
-            padding: 15px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-        }
-        .spinner-border {
-            width: 3rem;
-            height: 3rem;
-        }
-        .nav-tabs {
-            margin-bottom: 15px;
-        }
-<!--        #visualization {-->
-<!--            height: 500px;-->
-<!--            width: 100%;-->
-<!--        }-->
-        .table-responsive {
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        .example-queries {
-            cursor: pointer;
-            color: #0d6efd;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Chat UI</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #e5ddd5;
+    }
+    .chat-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #f0f0f0;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 70px);
+      overflow-y: auto;
+      padding: 20px 15px;
+      scroll-behavior: smooth;
+    }
+    .chat-box {
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+    .message {
+      max-width: 80%;
+      margin: 10px 0;
+      padding: 14px 18px;
+      border-radius: 10px;
+      line-height: 1.6;
+      font-size: 15px;
+      white-space: pre-wrap;
+      position: relative;
+    }
+    .user-message {
+      background: #ede7f6;
+      align-self: flex-end;
+      margin-left: auto;
+      color: #1a1a1a;
+    }
+    .bot-message {
+      background: #fdf8ff;
+      border-left: 4px solid #6a1b9a;
+      color: #1a1a1a;
+      margin-right: auto;
+    }
+    .timestamp {
+      font-size: 11px;
+      color: #777;
+      text-align: right;
+      margin-top: 4px;
+    }
+    .feedback-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      font-size: 16px;
+      margin-top: 4px;
+      cursor: pointer;
+    }
+    .feedback-buttons span:hover {
+      transform: scale(1.2);
+    }
+    .feedback-buttons.disabled {
+      opacity: 0.4;
+      pointer-events: none;
+    }
+    .disabled {
+      opacity: 0.5 !important;
+      pointer-events: none !important;
+      cursor: not-allowed !important;
+    }
+
+    .input-area {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      padding: 10px;
+      box-shadow: 0 -1px 5px rgba(123, 31, 162, 0.2);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      transition: opacity 0.3s ease;
+      z-index: 100;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #7e57c2;
+      border-radius: 20px;
+      font-size: 14px;
+    }
+    button {
+      padding: 10px 18px;
+      background: #4b0082;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .suggestions-box {
+      background: #f9f9f9;
+      border-radius: 8px;
+      padding: 10px;
+      margin: 15px 0 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .suggestion-btn {
+      background-color: #ede7f6;
+      border: 1px solid #7b1fa2;
+      border-radius: 20px;
+      padding: 8px 14px;
+      font-size: 13px;
+      color: #4a148c;
+      cursor: pointer;
+    }
+    .suggestion-btn.clicked {
+      background-color: #ce93d8;
+      color: #4a0072;
+      transform: scale(1.05);
+    }
+    .typing-indicator {
+      font-style: italic;
+      color: gray;
+      margin-top: 5px;
+    }
+    .dot-anim::after {
+      content: '';
+      display: inline-block;
+      animation: dots 1.4s infinite steps(3, jump-none);
+    }
+    @keyframes dots {
+      0% { content: ''; }
+      33% { content: '.'; }
+      66% { content: '..'; }
+      100% { content: '...'; }
+    }
+    .history-toggle {
+      position: fixed;
+      left: 10px;
+      bottom: 80px;
+      background: #4b0082;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      z-index: 101;
+    }
+    .history-panel {
+      position: fixed;
+      left: 10px;
+      bottom: 130px;
+      width: 200px;
+      max-height: 300px;
+      overflow-y: auto;
+      background: #fafafa;
+      border: 1px solid #7e57c2;
+      border-radius: 8px;
+      padding: 10px;
+      display: none;
+      z-index: 101;
+    }
+    .history-entry {
+      font-size: 13px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      color: #4b0082;
+    }
+    .history-entry:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-md-10">
-                <div class="card mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h2 class="my-2">NPS Database Query Assistant</h2>
-                        <p class="mb-0">Ask questions about your NPS database in natural language</p>
-                    </div>
-                    <div class="card-body">
-                        <div class="query-box">
-                            <div class="mb-3">
-                                <label for="queryInput" class="form-label">Ask a question about your data:</label>
-                                <textarea class="form-control" id="queryInput" rows="3" placeholder="Example: How many feedbacks we received last month?"></textarea>
-                            </div>
-                            <div class="d-grid gap-2">
-                                <button class="btn btn-primary" id="submitQuery">Submit Query</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+  <div class="chat-container" id="chatContainer">
+    <div class="chat-box" id="chatBox"></div>
+  </div>
 
-                <div class="loading">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-2">Processing your query...</p>
-                </div>
+  <div class="input-area" id="inputArea">
+    <input type="text" id="userInput" placeholder="Type your message..." autocomplete="off" />
+    <button id="sendBtn">Send</button>
+  </div>
 
-                <div class="result-section">
-                    <div class="card">
-                        <div class="card-header">
-                            <ul class="nav nav-tabs card-header-tabs" id="resultTabs" role="tablist">
-<!--                                <li class="nav-item" role="presentation">-->
-<!--                                    <button class="nav-link active" id="visualization-tab" data-bs-toggle="tab" data-bs-target="#visualization-content" type="button" role="tab" aria-controls="visualization-content" aria-selected="true">Visualization</button>-->
-<!--                                </li>-->
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="data-tab" data-bs-toggle="tab" data-bs-target="#data-content" type="button" role="tab" aria-controls="data-content" aria-selected="false">Raw Data</button>
-                                </li>
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="sql-tab" data-bs-toggle="tab" data-bs-target="#sql-content" type="button" role="tab" aria-controls="sql-content" aria-selected="false">SQL Query</button>
-                                </li>
-                            </ul>
-                        </div>
-                        <div class="card-body">
-                            <div class="tab-content" id="resultTabsContent">
-                                <div class="tab-pane fade show active" id="visualization-content" role="tabpanel" aria-labelledby="visualization-tab">
-                                    <div id="visualization"></div>
-                                </div>
-                                <div class="tab-pane fade" id="data-content" role="tabpanel" aria-labelledby="data-tab">
-                                    <div class="table-responsive">
-                                        <table class="table table-striped table-hover" id="dataTable">
-                                            <thead id="tableHead"></thead>
-                                            <tbody id="tableBody"></tbody>
-                                        </table>
-                                    </div>
-                                    <div class="mt-2">
-                                        <p id="rowCount"></p>
-                                    </div>
-                                </div>
-                                <div class="tab-pane fade" id="sql-content" role="tabpanel" aria-labelledby="sql-tab">
-                                    <div class="sql-query" id="sqlQuery"></div>
-                                    <div class="mt-4">
-                                        <h5>Query Explanation</h5>
-                                        <div id="queryExplanation"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+  <button class="history-toggle" onclick="toggleHistory()">📜 History</button>
+  <div class="history-panel" id="historyPanel"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const submitButton = document.getElementById('submitQuery');
-            const queryInput = document.getElementById('queryInput');
-            const loadingDiv = document.querySelector('.loading');
-            const resultSection = document.querySelector('.result-section');
-            const sqlQueryDiv = document.getElementById('sqlQuery');
-            const tableHead = document.getElementById('tableHead');
-            const tableBody = document.getElementById('tableBody');
-            const rowCountDiv = document.getElementById('rowCount');
-            const visualizationDiv = document.getElementById('visualization');
-            const queryExplanation = document.getElementById('queryExplanation');
+  <script>
+    const chatBox = document.getElementById('chatBox');
+    const chatContainer = document.getElementById('chatContainer');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const historyPanel = document.getElementById('historyPanel');
+    let lastClickedSuggestion = null;
 
-            // Handle example query clicks
-            const exampleQueries = document.querySelectorAll('.example-queries');
-            exampleQueries.forEach(example => {
-                example.addEventListener('click', function() {
-                    queryInput.value = this.textContent;
-                });
-            });
+    const suggestionBox = () => document.getElementById("suggestionBox");
 
-            // Handle submit button click
-            submitButton.addEventListener('click', function() {
-                const query = queryInput.value.trim();
-                if (!query) return;
+    function getCurrentTimestamp() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
 
-                // Show loading, hide results
-                loadingDiv.style.display = 'block';
-                resultSection.style.display = 'none';
+    function scrollToBottom() {
+      requestAnimationFrame(() => {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
+    }
 
-                // Send query to backend
-                fetch('/api/query', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ query: query }),
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    // Hide loading
-                    loadingDiv.style.display = 'none';
+    function renderMarkdown(text) {
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/```sql([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+    }
 
-                    // Display SQL query
-                    sqlQueryDiv.textContent = data.sql;
+    function appendMessage(content, isUser = false, options = {}) {
+      const { showFeedback = true, query = "" } = options;
+      const bubble = document.createElement("div");
+      bubble.className = `message ${isUser ? "user-message" : "bot-message"}`;
+      bubble.innerHTML = isUser ? content : renderMarkdown(content);
 
-                    // Display query explanation
-                    queryExplanation.innerHTML = data.explanation.replace(/\n/g, '<br>');
+      const timestamp = document.createElement("div");
+      timestamp.className = "timestamp";
+      timestamp.textContent = getCurrentTimestamp();
+      bubble.appendChild(timestamp);
 
-                    // Display data in table
-                    if (data.results && data.results.length > 0) {
-                        // Create table headers
-<!--                        const headers = Object.keys(data.results[0]);-->
-<!--                        tableHead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;-->
+      if (!isUser && showFeedback) {
+        const feedback = document.createElement("div");
+        feedback.className = "feedback-buttons";
+        feedback.innerHTML = `<span onclick="handleFeedback(true, this)">👍</span><span onclick="handleFeedback(false, this)">👎</span>`;
+        bubble.appendChild(feedback);
+        bubble.setAttribute("data-query", query);
+      }
 
-<!--                        // Create table rows-->
-<!--                        //tableBody.innerHTML = data.results.map(row => {-->
-<!--                        //    return `<tr>${headers.map(h => `<td>${row[h] !== null ? row[h] : 'NULL'}</td>`).join('')}</tr>`;-->
-<!--                        //}).join('');-->
-<!--                        tableBody.innerHTML = data.-->
-<!--                        // Show row count-->
-<!--                        rowCountDiv.textContent = `Showing ${data.rowCount} record(s)`;-->
-                            if (data.results && data.results.length > 0) {
-                              // If data.results is a simple string, display it directly.  You might want to sanitize it for HTML.
-                              tableBody.innerHTML = `<tr><td>${data.results}</td></tr>`;
-                              rowCountDiv.textContent = "Showing 1 record"; // Or however you want to handle this// If there might be HTML in data.results and you DON'T want it rendered://
-                              // tableBody.textContent = data.results; // Use textContent instead of innerHTML
-                            } else {
-                              // Handle the case where there are no results (empty string or null/undefined)
-                              tableBody.innerHTML = "<tr><td>No data found.</td></tr>"; // Or similar message
-                              rowCountDiv.textContent = "Showing 0 records";
-                            }
-                        // Create visualization if available
-<!--                        if (data.visualization && data.visualization.data) {-->
-<!--                            // Parse the visualization data-->
-<!--                            const vizData = JSON.parse(data.visualization.data);-->
-<!--                            Plotly.newPlot('visualization', vizData.data, vizData.layout);-->
+      const sBox = suggestionBox();
+      sBox ? chatBox.insertBefore(bubble, sBox) : chatBox.appendChild(bubble);
+      scrollToBottom();
+    }
 
-<!--                            // Show visualization tab-->
-<!--                            document.getElementById('visualization-tab').style.display = 'block';-->
-<!--                        } else {-->
-<!--                            // Create a simple table visualization-->
-<!--                            const tableData = [{-->
-<!--                                type: 'table',-->
-<!--                                header: {-->
-<!--                                    values: headers,-->
-<!--                                    align: 'center',-->
-<!--                                    line: {width: 1, color: 'black'},-->
-<!--                                    fill: {color: '#506784'},-->
-<!--                                    font: {family: "Arial", size: 12, color: "white"}-->
-<!--                                },-->
-<!--                                cells: {-->
-<!--                                    values: headers.map(h => data.results.map(r => r[h])),-->
-<!--                                    align: 'center',-->
-<!--                                    line: {color: "black", width: 1},-->
-<!--                                    font: {family: "Arial", size: 11, color: ["black"]}-->
-<!--                                }-->
-<!--                            }];-->
+    function appendTypingIndicator() {
+      removeTypingIndicator();
+      const indicator = document.createElement("div");
+      indicator.className = "message bot-message typing-indicator";
+      indicator.id = "typingIndicator";
+      indicator.innerHTML = "🤖 <em>Typing<span class='dot-anim'></span></em>";
+      const sBox = suggestionBox();
+      sBox ? chatBox.insertBefore(indicator, sBox) : chatBox.appendChild(indicator);
+      scrollToBottom();
+    }
 
-<!--                            Plotly.newPlot('visualization', tableData);-->
-<!--                        }-->
-                    } else {
-                        tableHead.innerHTML = '';
-                        tableBody.innerHTML = '<tr><td>No results found</td></tr>';
-                        rowCountDiv.textContent = 'No records found';
-                    }
+    function removeTypingIndicator() {
+      const indicator = document.getElementById("typingIndicator");
+      if (indicator) indicator.remove();
+    }
 
-                    // Show results
-                    resultSection.style.display = 'block';
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    loadingDiv.style.display = 'none';
-                    alert('Error processing your query. Please try again.');
-                });
-            });
-        });
-    </script>
+    function handleFeedback(isLike, element) {
+      const msg = element.closest(".message");
+      const query = msg.getAttribute("data-query") || userInput.value;
+
+      if (isLike) {
+        const appreciation = document.createElement("div");
+        appreciation.className = "message bot-message";
+        appreciation.innerHTML = renderMarkdown("🙏 Thanks for the feedback! Happy to help.");
+        const time = document.createElement("div");
+        time.className = "timestamp";
+        time.textContent = getCurrentTimestamp();
+        appreciation.appendChild(time);
+        const sBox = suggestionBox();
+        chatBox.insertBefore(appreciation, sBox || null);
+        scrollToBottom();
+      } else {
+        if (document.getElementById("reworkingIndicator")) return;
+        const line = document.createElement("div");
+        line.className = "message typing-indicator";
+        line.id = "reworkingIndicator";
+        line.style.textAlign = "center";
+        line.style.color = "gray";
+        line.style.fontStyle = "italic";
+        line.innerHTML = "🔁 Reworking for a better answer<span class='dot-anim'></span>";
+        msg.appendChild(line);
+        userInput.value = query;
+        sendMessage(true, msg);
+      }
+    }
+
+    function appendSuggestions(suggestions) {
+      const old = suggestionBox();
+      if (old) old.remove();
+
+      const box = document.createElement("div");
+      box.className = "suggestions-box";
+      box.id = "suggestionBox";
+
+      suggestions.forEach(text => {
+        const btn = document.createElement("button");
+        btn.className = "suggestion-btn";
+        btn.textContent = "💡 " + text;
+        btn.onclick = () => {
+          if (lastClickedSuggestion) lastClickedSuggestion.classList.remove("clicked");
+          btn.classList.add("clicked");
+          lastClickedSuggestion = btn;
+          userInput.value = text;
+          sendMessage();
+        };
+        box.appendChild(btn);
+      });
+
+      chatBox.appendChild(box);
+      scrollToBottom();
+    }
+
+    function toggleHistory() {
+      historyPanel.style.display = historyPanel.style.display === "block" ? "none" : "block";
+      renderHistory();
+    }
+
+    function saveToHistory(query, time) {
+      const history = JSON.parse(localStorage.getItem("queryHistory") || "[]");
+      history.push({ query, time });
+      localStorage.setItem("queryHistory", JSON.stringify(history));
+    }
+
+    function renderHistory() {
+      historyPanel.innerHTML = "";
+      const history = JSON.parse(localStorage.getItem("queryHistory") || "[]").reverse();
+      history.forEach(entry => {
+        const div = document.createElement("div");
+        div.className = "history-entry";
+        div.textContent = `${entry.query} (${entry.time})`;
+        div.onclick = () => {
+          userInput.value = entry.query;
+          sendMessage();
+          toggleHistory();
+        };
+        historyPanel.appendChild(div);
+      });
+    }
+
+    function setSendEnabled(enabled) {
+      sendBtn.classList.toggle("disabled", !enabled);
+    }
+
+    function setSuggestionsEnabled(enabled) {
+      const box = suggestionBox();
+      if (!box) return;
+      const buttons = box.querySelectorAll(".suggestion-btn");
+      buttons.forEach(btn => btn.classList.toggle("disabled", !enabled));
+    }
+
+    async function sendMessage(isRetry = false, retryBubble = null) {
+      const query = userInput.value.trim();
+      if (!query) return;
+      setSendEnabled(false);
+      setSuggestionsEnabled(false);
+
+      if (!isRetry) {
+        appendMessage(query, true);
+        saveToHistory(query, getCurrentTimestamp());
+        appendTypingIndicator();
+      }
+
+      userInput.value = "";
+
+      const response = await fetch("/api/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+
+      const data = await response.json();
+      if (!isRetry) removeTypingIndicator();
+
+      if (isRetry && retryBubble) {
+        retryBubble.innerHTML = renderMarkdown(data.explanation);
+        const time = document.createElement("div");
+        time.className = "timestamp";
+        time.textContent = getCurrentTimestamp();
+        retryBubble.appendChild(time);
+        const feedback = document.createElement("div");
+        feedback.className = "feedback-buttons";
+        feedback.innerHTML = `<span onclick="handleFeedback(true, this)">👍</span><span onclick="handleFeedback(false, this)">👎</span>`;
+        retryBubble.appendChild(feedback);
+      } else {
+        appendMessage(data.explanation, false, { query });
+      }
+
+      if (data.suggestions?.length) appendSuggestions(data.suggestions);
+      setSendEnabled(true);
+      setSuggestionsEnabled(true);
+    }
+
+    userInput.addEventListener("keypress", e => {
+      if (e.key === "Enter" && !e.shiftKey) sendMessage();
+    });
+
+    window.addEventListener("load", () => {
+      appendMessage(
+        "**🔔 Welcome to the NPS Insights Assistant**\n\n" +
+        "Get instant answers and trends from your customer feedback.\n\n" +
+        "_Start by asking a question like:_\n" +
+        "- *What are the top complaints last month?*\n" +
+        "- *Which delivery partners have the highest scores?*",
+        false,
+        { showFeedback: false }
+      );
+    });
+  </script>
 </body>
 </html>
