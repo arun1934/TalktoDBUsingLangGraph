@@ -8,8 +8,8 @@ A full-stack conversational assistant that allows users to query a PostgreSQL da
 
 ## 📸 Demo
 
-Coming soon! 
-
+![Screenshot](images/image1.png)
+![Screenshot](images/image2.png)
 ---
 
 ## 🧰 Tech Stack
