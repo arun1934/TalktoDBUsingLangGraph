@@ -1,7 +1,14 @@
-# How do the themes of comments received in february?
-# How do the themes of comments in February compare to those in January?
-# run a setiment analysis on the comments received and tell top 5 themes
-# Based on this give to top areas of improvements and suggestions to what to do
+# At a high level, the agent will:
+# 1. Fetch the available tables from the database
+# 2. Decide which tables are relevant to the question
+# 3. Fetch the DDL for the relevant tables
+# 4. Generate a query based on the question and information from the DDL
+# 5. Double-check the query for common mistakes using an LLM
+# 6. Execute the query and return the results
+# 7. Correct mistakes surfaced by the database engine until the query is successful
+# 8. Formulate a response based on the results
+# 9. Suggest follow-up questions based on the results
+
 from dotenv import load_dotenv
 from typing import Annotated, Any, Literal
 from fastapi import FastAPI, Request, HTTPException
