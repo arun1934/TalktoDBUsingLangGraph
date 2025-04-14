@@ -405,14 +405,17 @@
     userInput.addEventListener("keypress", e => {
       if (e.key === "Enter" && !e.shiftKey) sendMessage();
     });
+    sendBtn.addEventListener("click", () => sendMessage());
+
 
     window.addEventListener("load", () => {
       appendMessage(
         "**🔔 Welcome to the NPS Insights Assistant**\n\n" +
         "Get instant answers and trends from your customer feedback.\n\n" +
         "_Start by asking a question like:_\n" +
-        "- *What are the top complaints last month?*\n" +
-        "- *Which delivery partners have the highest scores?*",
+        "- *What are the top comments received in March?*\n" +
+        "- *What are the top comments received?*" +
+        "- *Perform sentiment analysis on the comments received and identify three key improvement areas.*",
         false,
         { showFeedback: false }
       );

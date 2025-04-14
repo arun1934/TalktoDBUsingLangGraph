@@ -1,3 +1,7 @@
+# How do the themes of comments received in february?
+# How do the themes of comments in February compare to those in January?
+# run a setiment analysis on the comments received and tell top 5 themes
+# Based on this give to top areas of improvements and suggestions to what to do
 from dotenv import load_dotenv
 from typing import Annotated, Any, Literal
 from fastapi import FastAPI, Request, HTTPException
@@ -15,9 +19,17 @@ from langgraph.prebuilt import ToolNode
 from langgraph.graph import END, StateGraph, START
 from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
+from langchain.globals import set_verbose
+from langchain.globals import set_debug
+from decimal import Decimal
+
+
 import os
 import json
 import re
+
+set_debug(False)
+set_verbose(True)
 
 # --- FastAPI app ---
 app = FastAPI()
@@ -27,11 +39,15 @@ templates = Jinja2Templates(directory="templates")
 load_dotenv()
 os.getenv("OPENAI_API_KEY")
 db = SQLDatabase.from_uri("postgresql+psycopg2://postgres:admin@localhost/NPS")
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-# --- Tool + Error Handling ---
+
+# Tools creation with feallback and error hanling
 def create_tool_node_with_fallback(tools: list) -> RunnableWithFallbacks[Any, dict]:
-    return ToolNode(tools).with_fallbacks([RunnableLambda(handle_tool_error)], exception_key="error")
+    """Create a ToolNode with a fallback to handle errors and surface them to the agent."""
+    return ToolNode(tools).with_fallbacks(
+        [RunnableLambda(handle_tool_error)], exception_key="error")
+
 
 def handle_tool_error(state) -> dict:
     error = state.get("error")
@@ -46,48 +62,55 @@ def handle_tool_error(state) -> dict:
         ]
     }
 
-# --- Tooling ---
+
+# Database specific tools
 toolkit = SQLDatabaseToolkit(db=db, llm=llm)
 tools = toolkit.get_tools()
 list_tables_tool = next(tool for tool in tools if tool.name == "sql_db_list_tables")
 get_schema_tool = next(tool for tool in tools if tool.name == "sql_db_schema")
 
-@tool
+
+# Tool definition for executing SQL queries
+@tool(name_or_callable="db_query_tool")
 def db_query_tool(query: str) -> dict:
-    """Execute a SQL query and return results as structured JSON."""
-    result = db.run_no_throw(query)
-    if not result:
-        return {"error": "Query failed or returned no data."}
-    rows = [dict(row) for row in result]
-    columns = list(rows[0].keys()) if rows else []
-    return {"columns": columns, "rows": rows}
+    """
+    Execute a SQL query against the database and get back the result.
+    If the query is not correct, an error message will be returned.
+    If an error is returned, rewrite the query, check the query, and try again.
+    """
+    result = {}
+    result_str = ""
+    try:
+        # print("Query executed in DB:", query)
+        result_str = db.run_no_throw(query)
+        print("Result post running query is: ", result_str)
+        if not result_str:
+            return {"error": "Query failed or returned no data."}
+        try:
+            # Attempt to convert string representation of tuples into actual tuples
+            result = eval(result_str, {"Decimal": Decimal})
 
-# --- LangGraph State ---
-class State(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
+            if isinstance(result, (list, tuple)) and all(isinstance(row, (list, tuple)) for row in result):
+                if result and all(len(row) == len(result[0]) for row in result):
+                    columns = [f"column_{i + 1}" for i in range(len(result[0]))]
+                    rows = [dict(zip(columns, row)) for row in result]
+                    return {"result_str": result_str, "columns": columns, "rows": rows}
+                else:
+                    return {"error": "Inconsistent data format in result."}
+            else:
+                return {"error": "Unexpected result type from database. Expected a list/tuple of lists/tuples"}
 
-workflow = StateGraph(State)
+        except (SyntaxError, NameError, TypeError) as eval_err:
+            return {"error": f"Error converting result string to data structure: {eval_err}"}
 
-# --- Initial Tool Invocation ---
-def first_tool_call(state: State) -> dict[str, list[AIMessage]]:
-    return {
-        "messages": [
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "sql_db_list_tables",
-                        "args": {},
-                        "id": "tool_ai",
-                    }
-                ],
-            )
-        ]
-    }
+    except Exception as e:
+        print(f"❌ Exception while executing DB query: {e}")
+    return {"result_str": result_str, "result": result}
+
 
 # --- Query Correction Prompt & Node ---
 query_check_system = """You are a SQL expert with a strong attention to detail.
-Double check the SQLite query for common mistakes, including:
+Double check the SQL query for common mistakes, including:
 - Using NOT IN with NULL values
 - Using UNION when UNION ALL should have been used
 - Using BETWEEN for exclusive ranges
@@ -108,7 +131,37 @@ query_check = query_check_prompt | llm.bind_tools(
     [db_query_tool], tool_choice="required"
 )
 
+
+# LangGraph specific code
+# Define the state for the agent
+class State(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+
+
+# Define a new graph
+workflow = StateGraph(State)
+
+
+# Add a node for the first tool call
+def first_tool_call(state: State) -> dict[str, list[AIMessage]]:
+    return {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "sql_db_list_tables",
+                        "args": {},
+                        "id": "tool_ai",
+                    }
+                ],
+            )
+        ]
+    }
+
+
 def model_check_query(state: State) -> dict[str, list[AIMessage]]:
+    """This tool will double check the query before executing it."""
     return {"messages": [query_check.invoke({"messages": [state["messages"][-1]]})]}
 
 
@@ -117,37 +170,36 @@ model_get_schema = llm.bind_tools([get_schema_tool])
 
 # --- Query Generation Prompt ---
 class SubmitFinalAnswer(BaseModel):
+    """Submit the final answer to to user based on the query results"""
     final_answer: str = Field(..., description="The final answer to the user")
 
 
-query_gen_system = """You are a SQL expert with a strong attention to detail.
-
-Given an input question, output a syntactically correct SQLite query to run, then look at the results of the query and return the answer.
-
-DO NOT call any tool besides SubmitFinalAnswer to submit the final answer.
-
-When generating the query:
-
-Output the SQL query that answers the input question without a tool call.
-
-Unless the user specifies a specific number of examples they wish to obtain, always limit your query to at most 5 results.
-You can order the results by a relevant column to return the most interesting examples in the database.
-Never query for all the columns from a specific table, only ask for the relevant columns given the question.
-
-If you get an error while executing a query, rewrite the query and try again.
-If you get a SELECT query as the final answer, rewrite the query and try again.
-
-If you get an empty result set, you should try to rewrite the query to get a non-empty result set.
-NEVER make stuff up if you don't have enough information to answer the query... just say you don't have enough information.
-
-If you have enough information to answer the input question, simply invoke the appropriate tool to submit the final answer to the user.
-
-DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database."""
+query_gen_system = """
+ROLE:
+You are an agent designed to interact with a SQL database. You have access to tools for interacting with the database.
+GOAL:
+Given an input question, create a syntactically correct SQL query to run, then look at the results of the query and return the answer.
+INSTRUCTIONS:
+- Only use the below tools for the following operations.
+- Never assume columns or tables that are not explicitly shown in the schema.
+- Only use the information returned by the below tools to construct your final answer.
+- To start you should ALWAYS look at the tables in the database to see what you can query. Do NOT skip this step.
+- Then you should query the schema of the most relevant tables.
+- Write your query based upon the schema of the tables. You MUST double check your query before executing it.
+- Unless the user specifies a specific number of examples they wish to obtain, always limit your query to at most 10 results.
+- You can order the results by a relevant column to return the most interesting examples in the database.
+- Never query for all the columns from a specific table, only ask for the relevant columns given the question.
+- If you get an error while executing a query, rewrite the query and try again.
+- If the query returns a result, use check_result tool to check the query result.
+- If the query result result is empty, think about the table schema, rewrite the query, and try again.
+- DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database."""
 
 query_gen_prompt = ChatPromptTemplate.from_messages([
     ("system", query_gen_system), ("placeholder", "{messages}")
 ])
-query_gen = query_gen_prompt | llm.bind_tools([SubmitFinalAnswer])
+
+query_gen = query_gen_prompt | llm
+
 
 def query_gen_node(state: State):
     message = query_gen.invoke(state)
@@ -164,7 +216,30 @@ def query_gen_node(state: State):
     return {"messages": [message] + tool_messages}
 
 
-# --- Suggestion Generator ---
+query_gen_formatting_prompt = ChatPromptTemplate.from_messages([
+    ("system", query_gen_system), ("placeholder", "{messages}")
+])
+# query_gen = query_gen_prompt | llm.bind_tools([SubmitFinalAnswer, model_check_query])
+# query_gen = query_gen_prompt | llm.bind_tools([SubmitFinalAnswer])
+query_gen_formatting_prompt = query_gen_formatting_prompt | llm.bind_tools([SubmitFinalAnswer])
+
+
+def query_gen_node_for_formatting(state: State):
+    message = query_gen_formatting_prompt.invoke(state)
+    tool_messages = []
+    if message.tool_calls:
+        for tc in message.tool_calls:
+            if tc["name"] != "SubmitFinalAnswer":
+                tool_messages.append(
+                    ToolMessage(
+                        content=f"Error: The wrong tool was called: {tc['name']}...",
+                        tool_call_id=tc["id"],
+                    )
+                )
+    return {"messages": [message] + tool_messages}
+
+
+# --- Suggestion Generation and related code ---
 suggestion_prompt = ChatPromptTemplate.from_messages([
     ("system", """
 You are an assistant that helps users explore their database through natural language.
@@ -178,10 +253,11 @@ Only return a JSON list of strings like:
 ])
 suggestion_chain = suggestion_prompt | llm
 
+
 def generate_suggestions_node(state: State) -> dict:
     user_query = ""
     result = ""
-    print("🧠 Gathering context for suggestions...")
+    # print("🧠 Gathering context for suggestions...")
     for msg in state["messages"]:
         if getattr(msg, "type", "") == "human":
             user_query = msg.content
@@ -191,12 +267,11 @@ def generate_suggestions_node(state: State) -> dict:
             for call in msg.tool_calls:
                 result = call.get("args", {}).get("final_answer", "")
     try:
-        print("📤 Suggestion Input - Query:", user_query)
-        print("📤 Suggestion Input - Result:", result)
+        # print("Suggestion Input - Query:", user_query)
+        # print("Suggestion Input - Result:", result)
         response = suggestion_chain.invoke({"query": user_query, "result": result})
-        print("📥 Raw Suggestion Output:", response.content)
+        print("Suggestion Output:", response.content)
         suggestions = json.loads(response.content)
-        print("✅ Suggestions:123", suggestions)
         state["messages"].append(
             ToolMessage(
                 content=suggestions,
@@ -206,6 +281,7 @@ def generate_suggestions_node(state: State) -> dict:
     except:
         suggestions = []
     return {"messages": state["messages"], "suggestions": suggestions}
+
 
 def extract_suggestions(event_result):
     messages = event_result.get("generate_suggestions", {}).get("messages", [])
@@ -218,6 +294,8 @@ def extract_suggestions(event_result):
                 return []
     return []
 
+
+# Define a conditional edge to decide whether to continue or end the workflow
 def should_continue(state: State) -> Literal[END, "correct_query", "query_gen", "generate_suggestions"]:
     last_message = state["messages"][-1]
     if getattr(last_message, "tool_calls", None):
@@ -236,6 +314,7 @@ workflow.add_node("query_gen", query_gen_node)
 workflow.add_node("correct_query", model_check_query)
 workflow.add_node("execute_query", create_tool_node_with_fallback([db_query_tool]))
 workflow.add_node("generate_suggestions", generate_suggestions_node)
+workflow.add_node("query_gen_node_for_formatting", query_gen_node_for_formatting)
 
 # --- Workflow Edges ---
 workflow.add_edge(START, "first_tool_call")
@@ -243,11 +322,13 @@ workflow.add_edge("first_tool_call", "list_tables_tool")
 workflow.add_edge("list_tables_tool", "model_get_schema")
 workflow.add_edge("model_get_schema", "get_schema_tool")
 workflow.add_edge("get_schema_tool", "query_gen")
-workflow.add_conditional_edges("query_gen", should_continue)
-workflow.add_edge("correct_query", "execute_query")
-workflow.add_edge("execute_query", "query_gen")
-workflow.add_edge("generate_suggestions", END)
 
+workflow.add_conditional_edges("query_gen", should_continue)
+workflow.add_edge("query_gen", "correct_query")
+workflow.add_edge("correct_query", "execute_query")
+workflow.add_edge("execute_query", "query_gen_node_for_formatting")
+workflow.add_edge("query_gen_node_for_formatting", "generate_suggestions")
+workflow.add_edge("generate_suggestions", END)
 # --- FastAPI Routes ---
 app1 = workflow.compile()
 
@@ -256,7 +337,7 @@ class QueryRequest(BaseModel):
 
 @app.post("/api/query")
 async def process_query(request: QueryRequest):
-    print("📥 Received query:", request.query)
+    # print("Received query:", request.query)
     try:
         event_result = {}
         for event in app1.stream({"messages": [("user", request.query)]}):
@@ -311,29 +392,37 @@ def get_final_answer(data):
         columns = []
         rows = []
 
-        messages = data.get("query_gen", {}).get("messages", [])
+        messages = data.get("correct_query", {}).get("messages", [])
         print("📄 Query Gen Messages:", messages)
         for message in messages:
             tool_calls = getattr(message, "tool_calls", [])
             for call in tool_calls:
                 args = call.get("args", {})
-                final_answer = args.get("final_answer", "")
-                if final_answer:
-                    sql_match = re.search(r"```sql\\s+(.*?)```", final_answer, re.DOTALL)
-                    if sql_match:
-                        sql_query = sql_match.group(1).strip()
-                        explanation = re.sub(r"```sql\\s+.*?```", "", final_answer, flags=re.DOTALL).strip()
-                    else:
-                        explanation = final_answer.strip()
+                sql_query = args.get("query", "")
+                # if final_answer:
+                #     sql_match = re.search(r"```sql\\s+(.*?)```", final_answer, re.DOTALL)
+                #     if sql_match:
+                #         sql_query = sql_match.group(1).strip()
+                #         explanation = re.sub(r"```sql\\s+.*?```", "", final_answer, flags=re.DOTALL).strip()
+                #     else:
+                #         explanation = final_answer.strip()
 
-        exec_msgs = data.get("execute_query", {}).get("messages", [])
+        exec_msgs = data.get("query_gen_node_for_formatting", {}).get("messages", [])
+        # messages = data.get("execute_query", {}).get("messages", [])
+        # for msg in messages:
+        #     if isinstance(msg, ToolMessage) and msg.name == "db_query_tool":
+        #         try:
+        #             return msg.content
+        #         except Exception as e:
+        #             print(f"Error parsing suggestions: {e}")
+        #             return []
+
+
         print("📊 Execute Query Messages:", exec_msgs)
         for msg in exec_msgs:
-            if isinstance(msg, ToolMessage):
+            if isinstance(msg, AIMessage):
                 try:
-                    result_data = json.loads(msg.content)
-                    columns = result_data.get("columns", [])
-                    rows = result_data.get("rows", [])
+                    explanation =  msg.tool_calls[0].get("args").get("final_answer")
                 except Exception as e:
                     print(f"Error parsing JSON from db tool message: {e}")
                     continue
@@ -353,7 +442,7 @@ def get_final_answer(data):
         print(f"Error extracting final answer: {e}")
         return {
             "sql": "",
-            "explanation": "Sorry, something went wrong.",
+            "explanation": "Sorry, something went wrong. Please click on 👎 to re-try",
             "columns": [],
             "rows": []
         }
