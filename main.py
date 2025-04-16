@@ -1,6 +1,5 @@
 # This is a FastAPI application that serves as an agent for querying a SQL database using natural language.
 # It utilizes LangChain and LangGraph to create a workflow that interacts with the database.
-# Credit Tutorial: https://langchain-ai.github.io/langgraph/tutorials/sql-agent/
 # At a high level, the agent will:
 # 1. Fetch the available tables from the database
 # 2. Decide which tables are relevant to the question
