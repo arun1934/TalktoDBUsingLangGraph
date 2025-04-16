@@ -411,25 +411,8 @@ def get_final_answer(data):
             for call in tool_calls:
                 args = call.get("args", {})
                 sql_query = args.get("query", "")
-                # if final_answer:
-                #     sql_match = re.search(r"```sql\\s+(.*?)```", final_answer, re.DOTALL)
-                #     if sql_match:
-                #         sql_query = sql_match.group(1).strip()
-                #         explanation = re.sub(r"```sql\\s+.*?```", "", final_answer, flags=re.DOTALL).strip()
-                #     else:
-                #         explanation = final_answer.strip()
 
         exec_msgs = data.get("query_gen_node_for_formatting", {}).get("messages", [])
-        # messages = data.get("execute_query", {}).get("messages", [])
-        # for msg in messages:
-        #     if isinstance(msg, ToolMessage) and msg.name == "db_query_tool":
-        #         try:
-        #             return msg.content
-        #         except Exception as e:
-        #             print(f"Error parsing suggestions: {e}")
-        #             return []
-
-
         print("📊 Execute Query Messages:", exec_msgs)
         for msg in exec_msgs:
             if isinstance(msg, AIMessage):
